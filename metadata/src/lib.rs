@@ -98,6 +98,97 @@ pub struct Artist {
     pub top_tracks: Vec<SpotifyId>,
 }
 
+#[derive(Debug, Clone)]
+pub struct RootList {
+    pub playlists: Vec<PlaylistId>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Playlist {
+    pub id: PlaylistId,
+    pub name: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct PlaylistId {
+    pub user: String,
+    pub playlist: String,
+}
+
+pub trait RootListMetadata : Send + Sized + 'static {
+    type Message: protobuf::MessageStatic;
+
+    //fn base_url() -> &'static str;
+    fn parse(msg: &Self::Message, session: &Session) -> Self;
+
+    fn get(session: &Session, username: String) -> BoxFuture<Self, MercuryError> {
+        let uri = format!("hm://playlist/user/{}/publishedrootlist", username);
+        let request = session.mercury().get(uri);
+
+        let session = session.clone();
+        request.and_then(move |response| {
+            let data = response.payload.first().expect("Empty payload");
+            let msg: Self::Message = protobuf::parse_from_bytes(data).unwrap();
+
+            Ok(Self::parse(&msg, &session))
+        }).boxed()
+    }
+}
+
+impl RootListMetadata for RootList {
+    type Message = protocol::playlist4changes::SelectedListContent;
+
+    fn parse(msg: &Self::Message, session: &Session) -> Self {
+        let items: Vec<PlaylistId> = msg.get_contents().get_items().iter().map(|i| {
+            let parts:Vec<&str> = i.get_uri().split(":").collect();
+            //println!("{:?}", parts);
+            PlaylistId {
+                user: parts[2].to_string(),
+                playlist: parts[4].to_string(),
+            }
+        }).collect();
+
+        
+
+        RootList {
+           playlists: items
+        }
+    }
+}
+
+pub trait PlaylistMetadata : Send + Sized + 'static {
+    type Message: protobuf::MessageStatic;
+
+    //fn base_url() -> &'static str;
+    fn parse(msg: &Self::Message, session: &Session, playlist_id: PlaylistId) -> Self;
+
+    fn get(session: &Session, playlist_id: PlaylistId) -> BoxFuture<Self, MercuryError> {
+        let uri = format!("hm://playlist/user/{}/playlist/{}", playlist_id.user, playlist_id.playlist);
+        let request = session.mercury().get(uri);
+
+        let session = session.clone();
+        request.and_then(move |response| {
+            let data = response.payload.first().expect("Empty payload");
+            let msg: Self::Message = protobuf::parse_from_bytes(data).unwrap();
+
+            Ok(Self::parse(&msg, &session, playlist_id))
+        }).boxed()
+    }
+}
+
+impl PlaylistMetadata for Playlist {
+    type Message = protocol::playlist4changes::SelectedListContent;
+
+    fn parse(msg: &Self::Message, session: &Session, playlist_id: PlaylistId) -> Self {
+        let name = msg.get_attributes().get_name().to_string();
+        //println!("{}", name);
+        Playlist {
+            id: playlist_id,
+            name: name,
+        }
+    }
+}
+
 impl Metadata for Track {
     type Message = protocol::metadata::Track;
 
