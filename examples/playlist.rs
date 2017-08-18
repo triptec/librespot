@@ -29,75 +29,17 @@ fn main() {
     println!("Connecting ..");
     let session = core.run(Session::connect(config, credentials, None, handle)).unwrap();
 
-    /*
-    let req = session.mercury().get(format!("hm://playlist/user/{}/publishedrootlist", session.username()));
-
-    let res = req.and_then(move |response| {
-        let data = response.payload.first().expect("Empty payload");
-        let msg:protocol::playlist4changes::SelectedListContent = protobuf::parse_from_bytes(data).unwrap();
-        let items: Vec<String> = msg.get_contents().get_items().iter().map(|i| {
-            println!("{}, {}", i.get_uri().to_string(), i.get_attributes().get_message());
-            i.get_uri().to_string()
-        }).collect();
-        Ok(items)
-    });
-    let items = core.run(res).unwrap();
-    let mut i = 0;
-    let mut fvec = Vec::new();
-    for item in items.clone() {
-        let split:Vec<&str> = item.split(":").collect();
-
-        //println!("{:?}", split);
-
-        let req = session.mercury().get(format!("hm://playlist/user/{}/playlist/{}", split[2],split[4]));
-
-        let res = req.and_then(move |response| {
-            let data = response.payload.first().expect("Empty payload");
-            let msg:protocol::playlist4changes::SelectedListContent = protobuf::parse_from_bytes(data).unwrap();
-
-            //println!("{}. {}", i, msg.get_attributes().get_name());
-            let name = msg.get_attributes().get_name().to_string();
-            /*
-            let items: Vec<String> = msg.get_contents().get_items().iter().map(|i| {
-                println!("{}", i.get_uri().to_string());
-                i.get_uri().to_string()
-            }).collect();
-            */
-            Ok((i, name))
-        });
-        i=i+1;
-        fvec.push(res);
-        //core.run(res);
-    }
-    let mut farray = futures::future::select_all(fvec);
-    let mut far = farray;
-    for i in 0..i-1 {
-        let ar = match core.run(far) {
-            Ok(v) => {
-                let (v, idx, ar) = v;
-                println!("sucess:{:?},{},{}", v, i, idx);
-                ar
-                // let (idx, res, ar) = v;
-            },
-            Err(e) => {
-                let (e, idx, ar) = e;
-                println!("err:{:?},{},{}", e, i, idx);
-                ar
-            }
-        };
-        if ar.len() <= 0 {
-            break;
-        }else{
-            far = futures::future::select_all(ar);
-        }
-    }
-    */
     let root_list = core.run(RootList::get(&session, session.username())).unwrap();
-    let mut playlists = Vec::new();
-    playlists = root_list.playlists.iter().map(|i|{
+    
+    let mut playlist_futures = Vec::new();
+    playlist_futures = root_list.playlists.iter().map(|i|{
         Playlist::get(&session, i.clone())
     }).collect();
-    let p = core.run(futures::future::join_all(playlists));
-    println!("{:?}", p);
+    
+    let playlists = core.run(futures::future::join_all(playlist_futures)).unwrap();
+
+    playlists.iter().enumerate().fold((), |(), (i, v)|{
+        println!("{}. {}", i, v.name);
+    });
     println!("Done");
 }
